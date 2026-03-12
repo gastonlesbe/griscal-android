@@ -4,12 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Bell body -->
+    <!-- G -->
     <path
-        android:fillColor="#0ecfbe"
-        android:pathData="M54,24 C51.8,24 50,25.8 50,28 L50,30.2 C43.4,31.8 38,37.8 38,45 L38,60 L34,64 L34,66 L74,66 L74,64 L70,60 L70,45 C70,37.8 64.6,31.8 58,30.2 L58,28 C58,25.8 56.2,24 54,24 Z" />
-    <!-- Bell clapper -->
+        android:fillColor="#0f1117"
+        android:pathData="M44,38 C36,38 30,44 30,54 C30,64 36,70 44,70 C50,70 54,67 56,64 L56,54 L44,54 L44,60 L50,60 L50,62 C49,63 47,64 44,64 C39,64 36,60 36,54 C36,48 39,44 44,44 C47,44 49,46 50,48 L56,46 C54,41 50,38 44,38 Z" />
+    <!-- R -->
     <path
-        android:fillColor="#0ecfbe"
-        android:pathData="M54,72 C56.8,72 59,69.8 59,67 L49,67 C49,69.8 51.2,72 54,72 Z" />
+        android:fillColor="#0f1117"
+        android:pathData="M62,38 L62,70 L68,70 L68,58 L72,58 L78,70 L85,70 L78,57 C81,55 83,52 83,48 C83,42 79,38 73,38 Z M68,44 L73,44 C76,44 77,46 77,48 C77,50 76,52 73,52 L68,52 Z" />
 </vector>

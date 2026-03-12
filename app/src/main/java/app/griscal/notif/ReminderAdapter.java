@@ -3,6 +3,7 @@ package app.griscal.notif;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -33,20 +34,24 @@ public class ReminderAdapter extends RecyclerView.Adapter<ReminderAdapter.VH> {
     @Override
     public void onBindViewHolder(@NonNull VH holder, int position) {
         ReminderItem item = items.get(position);
-        String icon = item.type == ReminderItem.Type.MEDICATION ? "💊" : "📅";
-        holder.tvTitle.setText(icon + " " + item.title);
+        holder.tvTitle.setText(item.title);
         holder.tvSubtitle.setText(item.subtitle.isEmpty()
                 ? FMT.format(new Date(item.dueAt))
                 : FMT.format(new Date(item.dueAt)) + "  ·  " + item.subtitle);
+        holder.ivIcon.setImageResource(
+                item.type == ReminderItem.Type.MEDICATION ? R.drawable.ic_bell : R.drawable.ic_calendar
+        );
     }
 
     @Override
     public int getItemCount() { return items.size(); }
 
     static class VH extends RecyclerView.ViewHolder {
+        ImageView ivIcon;
         TextView tvTitle, tvSubtitle;
         VH(View v) {
             super(v);
+            ivIcon     = v.findViewById(R.id.ivIcon);
             tvTitle    = v.findViewById(R.id.tvTitle);
             tvSubtitle = v.findViewById(R.id.tvSubtitle);
         }
