@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -29,6 +30,10 @@
         android:layout_height="wrap_content"
         android:hint="Email"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        app:boxStrokeColor="#8a8fa8"
+        app:boxStrokeWidth="1dp"
+        app:hintTextColor="#8a8fa8"
+        app:boxBackgroundColor="#161b27"
         android:layout_marginBottom="16dp">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -36,7 +41,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="textEmailAddress"
-            android:textColor="#ffffff" />
+            android:textColor="#ffffff"
+            android:textColorHint="#8a8fa8" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
@@ -44,16 +50,21 @@
         android:layout_height="wrap_content"
         android:hint="Password"
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        app:boxStrokeColor="#8a8fa8"
+        app:boxStrokeWidth="1dp"
+        app:hintTextColor="#8a8fa8"
+        app:boxBackgroundColor="#161b27"
         app:passwordToggleEnabled="true"
-        android:layout_marginBottom="24dp"
-        xmlns:app="http://schemas.android.com/apk/res-auto">
+        app:passwordToggleTint="#8a8fa8"
+        android:layout_marginBottom="24dp">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etPassword"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="textPassword"
-            android:textColor="#ffffff" />
+            android:textColor="#ffffff"
+            android:textColorHint="#8a8fa8" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <Button
