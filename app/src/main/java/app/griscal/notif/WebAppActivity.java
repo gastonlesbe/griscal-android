@@ -1,6 +1,7 @@
 package app.griscal.notif;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.os.Bundle;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -10,6 +11,9 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 public class WebAppActivity extends AppCompatActivity {
 
@@ -23,6 +27,16 @@ public class WebAppActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+
+        // Not logged in → go to login screen, no flash
+        if (user == null) {
+            startActivity(new Intent(this, LoginActivity.class));
+            finish();
+            return;
+        }
+
         setContentView(R.layout.activity_webview);
 
         progressBar = findViewById(R.id.progressBar);
@@ -30,14 +44,14 @@ public class WebAppActivity extends AppCompatActivity {
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);  // required for Firebase Auth (localStorage)
+        settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false; // keep all navigation inside the WebView
+                return false;
             }
         });
 
@@ -49,12 +63,19 @@ public class WebAppActivity extends AppCompatActivity {
             }
         });
 
-        // If we have an ID token, use it to auto-sign into the web app
+        // Already logged in — get fresh ID token and auto-sign into web app
         String idToken = getIntent().getStringExtra(EXTRA_ID_TOKEN);
-        String url = (idToken != null && !idToken.isEmpty())
-            ? BASE_URL + "/mobile-auth?idToken=" + idToken
-            : BASE_URL;
-        webView.loadUrl(url);
+        if (idToken != null && !idToken.isEmpty()) {
+            // Token passed directly from LoginActivity
+            webView.loadUrl(BASE_URL + "/mobile-auth?idToken=" + idToken);
+        } else {
+            // Returning user — get a fresh token silently
+            user.getIdToken(false).addOnSuccessListener(result -> {
+                String token = result.getToken();
+                ReminderSyncService.start(this);
+                webView.loadUrl(BASE_URL + "/mobile-auth?idToken=" + token);
+            }).addOnFailureListener(e -> webView.loadUrl(BASE_URL));
+        }
     }
 
     @Override
