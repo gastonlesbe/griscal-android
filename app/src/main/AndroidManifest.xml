@@ -15,23 +15,25 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GriscalNotif">
 
+        <!-- WebView is now the entry point -->
         <activity
-            android:name=".LoginActivity"
-            android:exported="true">
+            android:name=".WebAppActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- Kept for background notification scheduling -->
         <activity
             android:name=".MainActivity"
             android:exported="false" />
 
         <activity
-            android:name=".WebAppActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize" />
+            android:name=".LoginActivity"
+            android:exported="false" />
 
         <service
             android:name=".GriscalMessagingService"
