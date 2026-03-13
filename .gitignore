@@ -6,3 +6,5 @@ local.properties
 app/google-services.json
 .idea/
 *.iml
+griscal_notif_upload.jks
+*.jks
