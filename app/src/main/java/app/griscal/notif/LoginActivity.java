@@ -58,6 +58,9 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void goToMain() {
+        // Schedule local Android notifications in the background
+        ReminderSyncService.start(this);
+
         // Get a fresh ID token and pass it to the WebView so the web app auto-signs in too
         auth.getCurrentUser().getIdToken(false)
             .addOnSuccessListener(result -> {
@@ -67,7 +70,6 @@ public class LoginActivity extends AppCompatActivity {
                 finish();
             })
             .addOnFailureListener(e -> {
-                // Token fetch failed — open WebView anyway (user will log in on web)
                 startActivity(new Intent(this, WebAppActivity.class));
                 finish();
             });
