@@ -7,6 +7,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
+import android.util.Log;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -36,7 +38,8 @@ public class ReminderSyncService extends IntentService {
     protected void onHandleIntent(Intent intent) {
         String uid = FirebaseAuth.getInstance().getCurrentUser() != null
             ? FirebaseAuth.getInstance().getCurrentUser().getUid() : null;
-        if (uid == null) return;
+        if (uid == null) { Log.w("GriscalSync", "No user — skipping sync"); return; }
+        Log.d("GriscalSync", "Starting sync for uid=" + uid);
 
         createNotificationChannel();
 
@@ -67,12 +70,16 @@ public class ReminderSyncService extends IntentService {
                         name != null ? name : "Medication",
                         dose != null ? dose : "", dueAt));
                 }
+                Log.d("GriscalSync", "Medications loaded: " + snap.size() + " docs, items added so far: " + loaded.size());
                 synchronized (lock) {
                     pending[0]--;
                     if (pending[0] == 0) scheduleAlarms(loaded);
                 }
             })
-            .addOnFailureListener(e -> { synchronized (lock) { pending[0]--; if (pending[0] == 0) scheduleAlarms(loaded); } });
+            .addOnFailureListener(e -> {
+                Log.e("GriscalSync", "Medications query failed: " + e.getMessage());
+                synchronized (lock) { pending[0]--; if (pending[0] == 0) scheduleAlarms(loaded); }
+            });
 
         // Appointments
         db.collection("users").document(uid).collection("appointments")
@@ -89,12 +96,16 @@ public class ReminderSyncService extends IntentService {
                         title != null ? title : "Appointment",
                         location != null ? location : "", when));
                 }
+                Log.d("GriscalSync", "Appointments loaded: " + snap.size() + " docs, items added so far: " + loaded.size());
                 synchronized (lock) {
                     pending[0]--;
                     if (pending[0] == 0) scheduleAlarms(loaded);
                 }
             })
-            .addOnFailureListener(e -> { synchronized (lock) { pending[0]--; if (pending[0] == 0) scheduleAlarms(loaded); } });
+            .addOnFailureListener(e -> {
+                Log.e("GriscalSync", "Appointments query failed: " + e.getMessage());
+                synchronized (lock) { pending[0]--; if (pending[0] == 0) scheduleAlarms(loaded); }
+            });
 
         // Wait for async Firestore queries to finish (max 15s)
         try { Thread.sleep(15000); } catch (InterruptedException ignored) {}
@@ -103,6 +114,10 @@ public class ReminderSyncService extends IntentService {
     private void scheduleAlarms(List<ReminderItem> reminders) {
         AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
+        Log.d("GriscalSync", "Scheduling " + reminders.size() + " alarms");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Log.d("GriscalSync", "canScheduleExactAlarms=" + am.canScheduleExactAlarms());
+        }
         for (ReminderItem r : reminders) {
             Intent intent = new Intent(this, NotificationReceiver.class);
             intent.putExtra("title", r.type == ReminderItem.Type.MEDICATION ? "💊 " + r.title : "📅 " + r.title);
