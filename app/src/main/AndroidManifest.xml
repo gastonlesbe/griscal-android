@@ -28,6 +28,11 @@
             android:name=".MainActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".WebAppActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize" />
+
         <service
             android:name=".GriscalMessagingService"
             android:exported="false">

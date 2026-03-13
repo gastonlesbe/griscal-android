@@ -264,11 +264,30 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        if (item.getItemId() == R.id.action_logout) {
+        int id = item.getItemId();
+        if (id == R.id.action_logout) {
             signOut();
+            return true;
+        } else if (id == R.id.action_open_web) {
+            openWebApp();
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void openWebApp() {
+        if (auth.getCurrentUser() == null) return;
+        // Get a fresh ID token then open the WebView with it
+        auth.getCurrentUser().getIdToken(false).addOnSuccessListener(result -> {
+            String idToken = result.getToken();
+            Intent intent = new Intent(this, WebAppActivity.class);
+            intent.putExtra(WebAppActivity.EXTRA_ID_TOKEN, idToken);
+            startActivity(intent);
+        }).addOnFailureListener(e -> {
+            // Open without token — user will see login page on the web
+            Intent intent = new Intent(this, WebAppActivity.class);
+            startActivity(intent);
+        });
     }
 
     private void signOut() {
