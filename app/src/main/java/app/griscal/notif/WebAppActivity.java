@@ -13,7 +13,8 @@ import androidx.appcompat.app.AppCompatActivity;
 
 public class WebAppActivity extends AppCompatActivity {
 
-    private static final String WEB_URL = "https://griscal.app";
+    public static final String EXTRA_ID_TOKEN = "id_token";
+    private static final String BASE_URL = "https://griscal.app";
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -48,7 +49,12 @@ public class WebAppActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl(WEB_URL);
+        // If we have an ID token, use it to auto-sign into the web app
+        String idToken = getIntent().getStringExtra(EXTRA_ID_TOKEN);
+        String url = (idToken != null && !idToken.isEmpty())
+            ? BASE_URL + "/mobile-auth?idToken=" + idToken
+            : BASE_URL;
+        webView.loadUrl(url);
     }
 
     @Override

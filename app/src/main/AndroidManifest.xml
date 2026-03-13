@@ -15,24 +15,23 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GriscalNotif">
 
-        <!-- WebView is now the entry point -->
+        <!-- Login once on Android → auto-signs into WebView too -->
         <activity
-            android:name=".WebAppActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
+            android:name=".LoginActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Kept for background notification scheduling -->
         <activity
-            android:name=".MainActivity"
-            android:exported="false" />
+            android:name=".WebAppActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden" />
 
         <activity
-            android:name=".LoginActivity"
+            android:name=".MainActivity"
             android:exported="false" />
 
         <service

@@ -58,7 +58,18 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void goToMain() {
-        startActivity(new Intent(this, MainActivity.class));
-        finish();
+        // Get a fresh ID token and pass it to the WebView so the web app auto-signs in too
+        auth.getCurrentUser().getIdToken(false)
+            .addOnSuccessListener(result -> {
+                Intent intent = new Intent(this, WebAppActivity.class);
+                intent.putExtra(WebAppActivity.EXTRA_ID_TOKEN, result.getToken());
+                startActivity(intent);
+                finish();
+            })
+            .addOnFailureListener(e -> {
+                // Token fetch failed — open WebView anyway (user will log in on web)
+                startActivity(new Intent(this, WebAppActivity.class));
+                finish();
+            });
     }
 }
