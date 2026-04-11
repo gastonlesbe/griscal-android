@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -46,6 +47,7 @@ public class WebAppActivity extends AppCompatActivity {
 
         requestNotificationPermission();
         requestExactAlarmPermission();
+        requestBatteryOptimizationExemption();
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
 
@@ -88,7 +90,6 @@ public class WebAppActivity extends AppCompatActivity {
             fetchCustomTokenAndLoad(passedToken);
         } else {
             user.getIdToken(true).addOnSuccessListener(result -> {
-                ReminderSyncService.start(this);
                 fetchCustomTokenAndLoad(result.getToken());
             }).addOnFailureListener(e -> webView.loadUrl(BASE_URL + "/login"));
         }
@@ -96,9 +97,7 @@ public class WebAppActivity extends AppCompatActivity {
 
     /**
      * Exchange Firebase ID token for a custom token via /api/auth/mobile,
-     * then load /mobile-auth?customToken=... so the web page can:
-     *   1. signInWithCustomToken → sets Firebase client-side auth (data loads)
-     *   2. create session cookie  → satisfies middleware auth check
+     * then load /mobile-auth?customToken=... so the web page can sign in and create a session cookie.
      */
     private void fetchCustomTokenAndLoad(String idToken) {
         new Thread(() -> {
@@ -120,7 +119,6 @@ public class WebAppActivity extends AppCompatActivity {
                 Log.d("GriscalAuth", "Mobile auth response: " + responseCode);
 
                 if (responseCode == 200) {
-                    // Read customToken from JSON response
                     java.io.BufferedReader reader = new java.io.BufferedReader(
                         new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
                     StringBuilder sb = new StringBuilder();
@@ -129,7 +127,6 @@ public class WebAppActivity extends AppCompatActivity {
                     reader.close();
 
                     String json = sb.toString();
-                    // Parse {"customToken":"..."} — simple extraction without a JSON lib
                     String customToken = null;
                     int start = json.indexOf("\"customToken\":\"");
                     if (start != -1) {
@@ -141,8 +138,10 @@ public class WebAppActivity extends AppCompatActivity {
                     if (customToken != null) {
                         Log.d("GriscalAuth", "Got custom token, loading /mobile-auth");
                         String finalToken = customToken;
-                        runOnUiThread(() -> webView.loadUrl(
-                            BASE_URL + "/mobile-auth?customToken=" + finalToken));
+                        runOnUiThread(() -> {
+                            ReminderSyncService.start(WebAppActivity.this);
+                            webView.loadUrl(BASE_URL + "/mobile-auth?customToken=" + finalToken);
+                        });
                     } else {
                         Log.w("GriscalAuth", "No customToken in response, going to /login");
                         runOnUiThread(() -> webView.loadUrl(BASE_URL + "/login"));
@@ -176,6 +175,18 @@ public class WebAppActivity extends AppCompatActivity {
             if (am != null && !am.canScheduleExactAlarms()) {
                 startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                     Uri.parse("package:" + getPackageName())));
+            }
+        }
+    }
+
+    private void requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName())));
+                } catch (Exception ignored) {}
             }
         }
     }

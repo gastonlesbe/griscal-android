@@ -14,6 +14,12 @@ public class NotificationReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        // On device boot: re-sync reminders from Firestore so alarms are rescheduled
+        if (android.content.Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+            ReminderSyncService.start(context);
+            return;
+        }
+
         String title = intent.getStringExtra("title");
         String body  = intent.getStringExtra("body");
         int    id    = intent.getIntExtra("id", 0);

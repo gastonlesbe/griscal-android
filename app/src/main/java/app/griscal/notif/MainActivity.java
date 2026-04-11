@@ -98,7 +98,7 @@ public class MainActivity extends AppCompatActivity {
                     Long endDate = doc.getLong("endDate");
                     if (endDate != null && endDate < now) continue;
 
-                    long dueAt = computeNextDose(startTime, doc.getString("frequency"));
+                    long dueAt = computeNextDose(startTime, doc.getString("frequency"), doc.getLong("startDate"));
                     if (dueAt <= 0 || dueAt > in7) continue;
 
                     String name = doc.getString("name");
@@ -159,23 +159,25 @@ public class MainActivity extends AppCompatActivity {
 
     // ── Next dose computation ─────────────────────────────────────────────────
 
-    private long computeNextDose(String startTime, String frequency) {
+    private long computeNextDose(String startTime, String frequency, Long startDate) {
         try {
             String[] parts = startTime.split(":");
             int h = Integer.parseInt(parts[0]);
             int m = Integer.parseInt(parts[1]);
 
+            long now = System.currentTimeMillis();
+
+            // Anchor from startDate if available, otherwise today
             Calendar base = Calendar.getInstance();
+            if (startDate != null) base.setTimeInMillis(startDate);
             base.set(Calendar.HOUR_OF_DAY, h);
             base.set(Calendar.MINUTE, m);
             base.set(Calendar.SECOND, 0);
             base.set(Calendar.MILLISECOND, 0);
 
-            long now = System.currentTimeMillis();
-
             if (frequency == null || frequency.isEmpty()) {
-                if (base.getTimeInMillis() <= now) base.add(Calendar.DAY_OF_YEAR, 1);
-                return base.getTimeInMillis();
+                // One-time dose: only show if today or future
+                return base.getTimeInMillis() >= now ? base.getTimeInMillis() : 0;
             }
 
             String[] f = frequency.split(" ");
@@ -189,7 +191,7 @@ public class MainActivity extends AppCompatActivity {
             else intervalMs = (long) amount * 365 * 86_400_000L;
 
             long next = base.getTimeInMillis();
-            while (next <= now) next += intervalMs;
+            while (next < now) next += intervalMs;
             return next;
         } catch (Exception e) {
             return 0;
