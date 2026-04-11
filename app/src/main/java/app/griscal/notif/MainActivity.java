@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -31,8 +32,10 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import app.griscal.notif.databinding.ActivityMainBinding;
 
@@ -80,81 +83,113 @@ public class MainActivity extends AppCompatActivity {
         binding.progressBar.setVisibility(View.VISIBLE);
         binding.tvEmpty.setVisibility(View.GONE);
 
-        long now   = System.currentTimeMillis();
-        long in7   = now + 7L * 24 * 60 * 60 * 1000;
+        long now = System.currentTimeMillis();
+        long in7 = now + 7L * 24 * 60 * 60 * 1000;
 
-        final List<ReminderItem> loaded = new ArrayList<>();
-        final int[] pending = {2}; // wait for both queries
-
-        // Medications
-        db.collection("users").document(uid).collection("medications")
-            .get()
-            .addOnSuccessListener(snap -> {
-                for (QueryDocumentSnapshot doc : snap) {
-                    Boolean active = doc.getBoolean("active");
-                    String startTime = doc.getString("startTime");
-                    if (active == null || !active || startTime == null) continue;
-
-                    Long endDate = doc.getLong("endDate");
-                    if (endDate != null && endDate < now) continue;
-
-                    long dueAt = computeNextDose(startTime, doc.getString("frequency"), doc.getLong("startDate"));
-                    if (dueAt <= 0 || dueAt > in7) continue;
-
-                    String name = doc.getString("name");
-                    String dose = doc.getString("dose");
-                    loaded.add(new ReminderItem(
-                        "med_" + doc.getId(),
-                        ReminderItem.Type.MEDICATION,
-                        name != null ? name : "Medication",
-                        dose != null ? dose : "",
-                        dueAt
-                    ));
+        // Step 1: get all subject refs for this user
+        db.collection("users").document(uid).collection("subjectRefs").get()
+            .addOnSuccessListener(refsSnap -> {
+                List<String> subjectIds = new ArrayList<>();
+                Map<String, String> subjectNames = new HashMap<>();
+                for (QueryDocumentSnapshot ref : refsSnap) {
+                    String sid = ref.getString("subjectId");
+                    String sname = ref.getString("subjectName");
+                    if (sid != null) {
+                        subjectIds.add(sid);
+                        subjectNames.put(sid, sname != null ? sname : "");
+                    }
                 }
-                checkDone(pending, loaded, now);
-            })
-            .addOnFailureListener(e -> checkDone(pending, loaded, now));
-
-        // Appointments
-        db.collection("users").document(uid).collection("appointments")
-            .get()
-            .addOnSuccessListener(snap -> {
-                for (QueryDocumentSnapshot doc : snap) {
-                    Boolean realized = doc.getBoolean("realized");
-                    if (Boolean.TRUE.equals(realized)) continue;
-
-                    Long when = doc.getLong("when");
-                    if (when == null || when < now || when > in7) continue;
-
-                    String title    = doc.getString("title");
-                    String location = doc.getString("location");
-                    loaded.add(new ReminderItem(
-                        "appt_" + doc.getId(),
-                        ReminderItem.Type.APPOINTMENT,
-                        title != null ? title : "Appointment",
-                        location != null ? location : "",
-                        when
-                    ));
+                if (subjectIds.isEmpty()) {
+                    showResults(new ArrayList<>());
+                    return;
                 }
-                checkDone(pending, loaded, now);
+                // Step 2: query medications + appointments for each subject
+                loadForSubjects(subjectIds, subjectNames, now, in7);
             })
-            .addOnFailureListener(e -> checkDone(pending, loaded, now));
+            .addOnFailureListener(e -> {
+                Log.e("GriscalMain", "subjectRefs failed: " + e.getMessage());
+                showResults(new ArrayList<>());
+            });
     }
 
-    private void checkDone(int[] pending, List<ReminderItem> loaded, long now) {
-        pending[0]--;
-        if (pending[0] > 0) return;
+    private void loadForSubjects(List<String> subjectIds, Map<String, String> subjectNames,
+                                  long now, long in7) {
+        List<ReminderItem> loaded = new ArrayList<>();
+        AtomicInteger pending = new AtomicInteger(subjectIds.size() * 2);
 
+        for (String subjectId : subjectIds) {
+            String subjectName = subjectNames.getOrDefault(subjectId, "");
+
+            // Medications
+            db.collection("subjects").document(subjectId).collection("medications").get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        for (QueryDocumentSnapshot doc : task.getResult()) {
+                            Boolean active = doc.getBoolean("active");
+                            String startTime = doc.getString("startTime");
+                            if (active == null || !active || startTime == null) continue;
+                            Long endDate = doc.getLong("endDate");
+                            if (endDate != null && endDate < now) continue;
+                            long dueAt = computeNextDose(startTime, doc.getString("frequency"), doc.getLong("startDate"));
+                            if (dueAt <= 0 || dueAt > in7) continue;
+                            String name = doc.getString("name");
+                            String dose = doc.getString("dose");
+                            synchronized (loaded) {
+                                loaded.add(new ReminderItem("med_" + doc.getId(),
+                                    ReminderItem.Type.MEDICATION,
+                                    name != null ? name : "Medication",
+                                    buildSubtitle(subjectName, dose), dueAt));
+                            }
+                        }
+                    } else {
+                        Log.e("GriscalMain", "Meds failed for " + subjectId + ": " + task.getException());
+                    }
+                    if (pending.decrementAndGet() == 0) runOnUiThread(() -> showResults(loaded));
+                });
+
+            // Appointments
+            db.collection("subjects").document(subjectId).collection("appointments").get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        for (QueryDocumentSnapshot doc : task.getResult()) {
+                            if (Boolean.TRUE.equals(doc.getBoolean("realized"))) continue;
+                            Long when = doc.getLong("when");
+                            if (when == null || when < now || when > in7) continue;
+                            String title    = doc.getString("title");
+                            String location = doc.getString("location");
+                            synchronized (loaded) {
+                                loaded.add(new ReminderItem("appt_" + doc.getId(),
+                                    ReminderItem.Type.APPOINTMENT,
+                                    title != null ? title : "Appointment",
+                                    buildSubtitle(subjectName, location), when));
+                            }
+                        }
+                    } else {
+                        Log.e("GriscalMain", "Appts failed for " + subjectId + ": " + task.getException());
+                    }
+                    if (pending.decrementAndGet() == 0) runOnUiThread(() -> showResults(loaded));
+                });
+        }
+    }
+
+    private String buildSubtitle(String subjectName, String detail) {
+        boolean hasName   = subjectName != null && !subjectName.isEmpty();
+        boolean hasDetail = detail != null && !detail.isEmpty();
+        if (hasName && hasDetail) return subjectName + " · " + detail;
+        if (hasName)   return subjectName;
+        if (hasDetail) return detail;
+        return "";
+    }
+
+    private void showResults(List<ReminderItem> loaded) {
         Collections.sort(loaded, (a, b) -> Long.compare(a.dueAt, b.dueAt));
-        runOnUiThread(() -> {
-            items.clear();
-            items.addAll(loaded);
-            adapter.notifyDataSetChanged();
-            binding.progressBar.setVisibility(View.GONE);
-            binding.swipeRefresh.setRefreshing(false);
-            binding.tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
-            scheduleAlarms(loaded);
-        });
+        items.clear();
+        items.addAll(loaded);
+        adapter.notifyDataSetChanged();
+        binding.progressBar.setVisibility(View.GONE);
+        binding.swipeRefresh.setRefreshing(false);
+        binding.tvEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+        scheduleAlarms(loaded);
     }
 
     // ── Next dose computation ─────────────────────────────────────────────────
@@ -167,7 +202,6 @@ public class MainActivity extends AppCompatActivity {
 
             long now = System.currentTimeMillis();
 
-            // Anchor from startDate if available, otherwise today
             Calendar base = Calendar.getInstance();
             if (startDate != null) base.setTimeInMillis(startDate);
             base.set(Calendar.HOUR_OF_DAY, h);
@@ -176,23 +210,28 @@ public class MainActivity extends AppCompatActivity {
             base.set(Calendar.MILLISECOND, 0);
 
             if (frequency == null || frequency.isEmpty()) {
-                // One-time dose: only show if today or future
                 return base.getTimeInMillis() >= now ? base.getTimeInMillis() : 0;
             }
 
-            String[] f = frequency.split(" ");
-            int amount = Integer.parseInt(f[0]);
+            String[] f  = frequency.split(" ");
+            int amount  = Integer.parseInt(f[0]);
             String unit = f.length > 1 ? f[1] : "hours";
 
-            long intervalMs;
-            if (unit.startsWith("hour"))  intervalMs = (long) amount * 3600_000;
-            else if (unit.startsWith("day")) intervalMs = (long) amount * 86_400_000;
-            else if (unit.startsWith("month")) intervalMs = (long) amount * 30 * 86_400_000L;
-            else intervalMs = (long) amount * 365 * 86_400_000L;
+            if ((unit.startsWith("month") || unit.startsWith("year")) && startDate == null) return 0;
 
-            long next = base.getTimeInMillis();
-            while (next < now) next += intervalMs;
-            return next;
+            if (unit.startsWith("hour")) {
+                long intervalMs = (long) amount * 3600_000;
+                long next = base.getTimeInMillis();
+                while (next < now) next += intervalMs;
+                return next;
+            } else if (unit.startsWith("day")) {
+                while (base.getTimeInMillis() <= now) base.add(Calendar.DAY_OF_YEAR, amount);
+            } else if (unit.startsWith("month")) {
+                while (base.getTimeInMillis() <= now) base.add(Calendar.MONTH, amount);
+            } else {
+                while (base.getTimeInMillis() <= now) base.add(Calendar.YEAR, amount);
+            }
+            return base.getTimeInMillis();
         } catch (Exception e) {
             return 0;
         }

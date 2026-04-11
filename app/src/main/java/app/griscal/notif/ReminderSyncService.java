@@ -17,7 +17,9 @@ import com.google.firebase.firestore.QueryDocumentSnapshot;
 
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -56,66 +58,96 @@ public class ReminderSyncService extends Service {
         long now = System.currentTimeMillis();
         long in7 = now + 7L * 24 * 60 * 60 * 1000;
 
-        final List<ReminderItem> loaded = new ArrayList<>();
-        final Object lock = new Object();
         final Object done = new Object();
         final boolean[] finished = {false};
-        AtomicInteger pending = new AtomicInteger(2);
 
-        // Medications
-        db.collection("users").document(uid).collection("medications").get()
-            .addOnCompleteListener(task -> {
-                if (task.isSuccessful()) {
-                    for (QueryDocumentSnapshot doc : task.getResult()) {
-                        Boolean active = doc.getBoolean("active");
-                        String startTime = doc.getString("startTime");
-                        if (active == null || !active || startTime == null) continue;
-                        Long endDate = doc.getLong("endDate");
-                        if (endDate != null && endDate < now) continue;
-                        long dueAt = computeNextDose(startTime, doc.getLong("startDate"), doc.getString("frequency"));
-                        if (dueAt <= 0 || dueAt > in7) continue;
-                        String name = doc.getString("name");
-                        String dose = doc.getString("dose");
-                        synchronized (lock) {
-                            loaded.add(new ReminderItem("med_" + doc.getId(),
-                                ReminderItem.Type.MEDICATION,
-                                name != null ? name : "Medication",
-                                dose != null ? dose : "", dueAt));
-                        }
+        // Step 1: get all subject refs for this user
+        db.collection("users").document(uid).collection("subjectRefs").get()
+            .addOnSuccessListener(refsSnap -> {
+                List<String> subjectIds = new ArrayList<>();
+                Map<String, String> subjectNames = new HashMap<>();
+                for (QueryDocumentSnapshot ref : refsSnap) {
+                    String sid   = ref.getString("subjectId");
+                    String sname = ref.getString("subjectName");
+                    if (sid != null) {
+                        subjectIds.add(sid);
+                        subjectNames.put(sid, sname != null ? sname : "");
                     }
-                } else {
-                    Log.e("GriscalSync", "Meds failed: " + task.getException());
                 }
-                if (pending.decrementAndGet() == 0) {
-                    scheduleAlarms(loaded);
-                    synchronized (done) { finished[0] = true; done.notifyAll(); }
-                }
-            });
+                Log.d("GriscalSync", "Found " + subjectIds.size() + " subjects");
 
-        // Appointments
-        db.collection("users").document(uid).collection("appointments").get()
-            .addOnCompleteListener(task -> {
-                if (task.isSuccessful()) {
-                    for (QueryDocumentSnapshot doc : task.getResult()) {
-                        if (Boolean.TRUE.equals(doc.getBoolean("realized"))) continue;
-                        Long when = doc.getLong("when");
-                        if (when == null || when < now || when > in7) continue;
-                        String title = doc.getString("title");
-                        String location = doc.getString("location");
-                        synchronized (lock) {
-                            loaded.add(new ReminderItem("appt_" + doc.getId(),
-                                ReminderItem.Type.APPOINTMENT,
-                                title != null ? title : "Appointment",
-                                location != null ? location : "", when));
-                        }
-                    }
-                } else {
-                    Log.e("GriscalSync", "Appts failed: " + task.getException());
-                }
-                if (pending.decrementAndGet() == 0) {
-                    scheduleAlarms(loaded);
+                if (subjectIds.isEmpty()) {
+                    scheduleAlarms(new ArrayList<>());
                     synchronized (done) { finished[0] = true; done.notifyAll(); }
+                    return;
                 }
+
+                // Step 2: query medications + appointments for each subject
+                List<ReminderItem> loaded = new ArrayList<>();
+                Object lock = new Object();
+                AtomicInteger pending = new AtomicInteger(subjectIds.size() * 2);
+
+                for (String subjectId : subjectIds) {
+                    String subjectName = subjectNames.getOrDefault(subjectId, "");
+
+                    db.collection("subjects").document(subjectId).collection("medications").get()
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                for (QueryDocumentSnapshot doc : task.getResult()) {
+                                    Boolean active = doc.getBoolean("active");
+                                    String startTime = doc.getString("startTime");
+                                    if (active == null || !active || startTime == null) continue;
+                                    Long endDate = doc.getLong("endDate");
+                                    if (endDate != null && endDate < now) continue;
+                                    long dueAt = computeNextDose(startTime, doc.getLong("startDate"), doc.getString("frequency"));
+                                    if (dueAt <= 0 || dueAt > in7) continue;
+                                    String name = doc.getString("name");
+                                    String dose = doc.getString("dose");
+                                    synchronized (lock) {
+                                        loaded.add(new ReminderItem("med_" + doc.getId(),
+                                            ReminderItem.Type.MEDICATION,
+                                            name != null ? name : "Medication",
+                                            buildSubtitle(subjectName, dose), dueAt));
+                                    }
+                                }
+                            } else {
+                                Log.e("GriscalSync", "Meds failed for " + subjectId + ": " + task.getException());
+                            }
+                            if (pending.decrementAndGet() == 0) {
+                                scheduleAlarms(loaded);
+                                synchronized (done) { finished[0] = true; done.notifyAll(); }
+                            }
+                        });
+
+                    db.collection("subjects").document(subjectId).collection("appointments").get()
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                for (QueryDocumentSnapshot doc : task.getResult()) {
+                                    if (Boolean.TRUE.equals(doc.getBoolean("realized"))) continue;
+                                    Long when = doc.getLong("when");
+                                    if (when == null || when < now || when > in7) continue;
+                                    String title    = doc.getString("title");
+                                    String location = doc.getString("location");
+                                    synchronized (lock) {
+                                        loaded.add(new ReminderItem("appt_" + doc.getId(),
+                                            ReminderItem.Type.APPOINTMENT,
+                                            title != null ? title : "Appointment",
+                                            buildSubtitle(subjectName, location), when));
+                                    }
+                                }
+                            } else {
+                                Log.e("GriscalSync", "Appts failed for " + subjectId + ": " + task.getException());
+                            }
+                            if (pending.decrementAndGet() == 0) {
+                                scheduleAlarms(loaded);
+                                synchronized (done) { finished[0] = true; done.notifyAll(); }
+                            }
+                        });
+                }
+            })
+            .addOnFailureListener(e -> {
+                Log.e("GriscalSync", "subjectRefs failed: " + e.getMessage());
+                synchronized (done) { finished[0] = true; done.notifyAll(); }
             });
 
         // Wait up to 10s for Firestore callbacks
@@ -126,6 +158,15 @@ public class ReminderSyncService extends Service {
         }
     }
 
+    private String buildSubtitle(String subjectName, String detail) {
+        boolean hasName   = subjectName != null && !subjectName.isEmpty();
+        boolean hasDetail = detail != null && !detail.isEmpty();
+        if (hasName && hasDetail) return subjectName + " · " + detail;
+        if (hasName)   return subjectName;
+        if (hasDetail) return detail;
+        return "";
+    }
+
     private void scheduleAlarms(List<ReminderItem> reminders) {
         AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
@@ -133,8 +174,8 @@ public class ReminderSyncService extends Service {
         for (ReminderItem r : reminders) {
             Intent intent = new Intent(this, NotificationReceiver.class);
             intent.putExtra("title", r.type == ReminderItem.Type.MEDICATION ? "💊 " + r.title : "📅 " + r.title);
-            intent.putExtra("body", r.subtitle.isEmpty() ? "Time for your reminder" : r.subtitle);
-            intent.putExtra("id", r.id.hashCode());
+            intent.putExtra("body",  r.subtitle.isEmpty() ? "Time for your reminder" : r.subtitle);
+            intent.putExtra("id",    r.id.hashCode());
             PendingIntent pi = PendingIntent.getBroadcast(this, r.id.hashCode(), intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             try {
@@ -170,14 +211,13 @@ public class ReminderSyncService extends Service {
             base.set(Calendar.MILLISECOND, 0);
 
             if (frequency == null || frequency.isEmpty()) {
-                if (base.getTimeInMillis() <= now) base.add(Calendar.DAY_OF_YEAR, 1);
-                return base.getTimeInMillis();
+                return base.getTimeInMillis() >= now ? base.getTimeInMillis() : 0;
             }
 
             if (unit.startsWith("hour")) {
                 long intervalMs = (long) amount * 3600_000;
                 long next = base.getTimeInMillis();
-                while (next <= now) next += intervalMs;
+                while (next < now) next += intervalMs;
                 return next;
             } else if (unit.startsWith("day")) {
                 while (base.getTimeInMillis() <= now) base.add(Calendar.DAY_OF_YEAR, amount);
