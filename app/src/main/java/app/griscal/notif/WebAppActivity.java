@@ -192,6 +192,15 @@ public class WebAppActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-sync on every resume so newly created events get scheduled
+        if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+            ReminderSyncService.start(this);
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
