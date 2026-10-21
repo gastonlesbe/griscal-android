@@ -8,3 +8,11 @@ app/google-services.json
 *.iml
 griscal_notif_upload.jks
 *.jks
+
+# Signed builds, recordings, heap dumps
+*.aab
+*.apk
+app/release/
+videos/
+Videos/
+*.hprof
